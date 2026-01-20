@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="BoxToBox.ApplicationService/BoxToBox.ApplicationService.csproj" />
+  <Project Path="BoxToBox.Domain/BoxToBox.Domain.csproj" />
+  <Project Path="BoxToBox.Infrastructure/BoxToBox.Infrastructure.csproj" />
+  <Project Path="BoxToBox.API/BoxToBox.API.csproj" />
+</Solution>

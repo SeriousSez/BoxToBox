@@ -39,4 +39,11 @@ public class VideoAnalysisEntity : Base
     public MatchEntity? Match { get; set; }
     public ICollection<PlayerStatEntity> PlayerStats { get; set; } = new List<PlayerStatEntity>();
     public ICollection<EventEntity> Events { get; set; } = new List<EventEntity>();
+    
+    // Advanced Analytics Navigation Properties
+    public ICollection<HeatMapDataEntity> HeatMaps { get; set; } = new List<HeatMapDataEntity>();
+    public ICollection<PlayerMetricsEntity> PlayerMetrics { get; set; } = new List<PlayerMetricsEntity>();
+    public PossessionDataEntity? PossessionData { get; set; }
+    public ICollection<PassNetworkEntity> PassNetwork { get; set; } = new List<PassNetworkEntity>();
+    public ICollection<FormationDataEntity> Formations { get; set; } = new List<FormationDataEntity>();
 }

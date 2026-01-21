@@ -29,4 +29,9 @@ public class VideoAnalysisResult
     public float AverageSpeed { get; set; }
     public ICollection<PlayerStatEntity> PlayerStats { get; set; } = new List<PlayerStatEntity>();
     public ICollection<EventEntity> Events { get; set; } = new List<EventEntity>();
+    
+    // Advanced Analytics
+    public ICollection<HeatMapDataEntity> HeatMaps { get; set; } = new List<HeatMapDataEntity>();
+    public ICollection<PlayerMetricsEntity> PlayerMetrics { get; set; } = new List<PlayerMetricsEntity>();
+    public PossessionDataEntity? PossessionData { get; set; }
 }

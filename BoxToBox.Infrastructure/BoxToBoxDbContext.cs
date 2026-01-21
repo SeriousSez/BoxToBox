@@ -17,6 +17,18 @@ public class BoxToBoxDbContext : IdentityDbContext<UserEntity, IdentityRole<Guid
     public DbSet<VideoAnalysisEntity> VideoAnalyses { get; set; }
     public DbSet<PlayerStatEntity> PlayerStats { get; set; }
     public DbSet<EventEntity> Events { get; set; }
+    
+    // Advanced Analytics Entities
+    public DbSet<HeatMapDataEntity> HeatMapData { get; set; }
+    public DbSet<PassNetworkEntity> PassNetworks { get; set; }
+    public DbSet<FormationDataEntity> Formations { get; set; }
+    public DbSet<PossessionDataEntity> PossessionData { get; set; }
+    public DbSet<PlayerMetricsEntity> PlayerMetrics { get; set; }
+    public DbSet<ShotDataEntity> Shots { get; set; }
+    public DbSet<OffsideEventEntity> OffsideEvents { get; set; }
+    public DbSet<SetPieceEventEntity> SetPieceEvents { get; set; }
+    public DbSet<PressingDataEntity> PressingData { get; set; }
+    public DbSet<DefensiveLineEntity> DefensiveLines { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +70,32 @@ public class BoxToBoxDbContext : IdentityDbContext<UserEntity, IdentityRole<Guid
             entity.HasMany(e => e.Events)
                 .WithOne(evt => evt.VideoAnalysis)
                 .HasForeignKey(evt => evt.VideoAnalysisId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Advanced analytics relationships
+            entity.HasMany(e => e.HeatMaps)
+                .WithOne()
+                .HasForeignKey(h => h.VideoAnalysisId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.PlayerMetrics)
+                .WithOne()
+                .HasForeignKey(pm => pm.VideoAnalysisId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.PassNetwork)
+                .WithOne()
+                .HasForeignKey(pn => pn.VideoAnalysisId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Formations)
+                .WithOne()
+                .HasForeignKey(f => f.VideoAnalysisId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.PossessionData)
+                .WithOne()
+                .HasForeignKey<PossessionDataEntity>(p => p.VideoAnalysisId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

@@ -16,15 +16,18 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Allow large uploads (up to 512 MB) for video files
+// Allow large uploads (up to 5 GB) for video files
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 512 * 1024 * 1024; // 512 MB
+    options.Limits.MaxRequestBodySize = 5L * 1024 * 1024 * 1024; // 5 GB
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
 });
 
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 512 * 1024 * 1024; // 512 MB
+    options.MultipartBodyLengthLimit = 5L * 1024 * 1024 * 1024; // 5 GB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 
 // Add CORS

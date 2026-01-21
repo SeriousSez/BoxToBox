@@ -25,6 +25,9 @@ public class VideoAnalysisController : ControllerBase
     /// Upload a video file for analysis - accepts match name or GUID
     /// </summary>
     [HttpPost("upload/{matchIdentifier}")]
+    [RequestSizeLimit(5_368_709_120)] // 5 GB
+    [RequestFormLimits(MultipartBodyLengthLimit = 5_368_709_120)]
+    [DisableRequestSizeLimit]
     public async Task<ActionResult<VideoAnalysisModel>> UploadVideo(string matchIdentifier, IFormFile file)
     {
         if (file == null || file.Length == 0)

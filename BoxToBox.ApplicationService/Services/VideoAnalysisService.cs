@@ -208,8 +208,9 @@ public class VideoAnalysisService : IVideoAnalysisService
         var matchRepository = scope.ServiceProvider.GetRequiredService<IMatchRepository>();
         var playerStatRepository = scope.ServiceProvider.GetRequiredService<IPlayerStatRepository>();
         var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BoxToBox.Infrastructure.BoxToBoxDbContext>();
         
-        await ProcessVideoAsync(analysisId, videoAnalysisRepository, matchRepository, playerStatRepository, eventRepository, homeTeam, awayTeam, goals, cameraAngle);
+        await ProcessVideoAsync(analysisId, videoAnalysisRepository, matchRepository, playerStatRepository, eventRepository, dbContext, homeTeam, awayTeam, goals, cameraAngle);
     }
 
     private async Task ProcessVideoAsync(
@@ -218,6 +219,7 @@ public class VideoAnalysisService : IVideoAnalysisService
         IMatchRepository matchRepository,
         IPlayerStatRepository playerStatRepository,
         IEventRepository eventRepository,
+        BoxToBox.Infrastructure.BoxToBoxDbContext context,
         TeamRosterRequest? homeTeam = null,
         TeamRosterRequest? awayTeam = null,
         List<GoalInfo>? goals = null,
@@ -295,6 +297,9 @@ public class VideoAnalysisService : IVideoAnalysisService
             await eventRepository.DeleteByAnalysisIdAsync(analysisId);
             Console.WriteLine($"[ProcessVideoAsync] Old data cleared");
 
+            // Ensure no tracked entities remain before inserting new ones
+            context.ChangeTracker.Clear();
+
             // Update analysis with results
             analysis.Duration = analysisResult.Duration;
             analysis.FramesPerSecond = analysisResult.FramesPerSecond;
@@ -326,6 +331,33 @@ public class VideoAnalysisService : IVideoAnalysisService
             }
 
             Console.WriteLine($"[ProcessVideoAsync] Events persisted: {analysisResult.Events.Count} for analysis {analysisId}");
+
+            // Save advanced analytics
+            Console.WriteLine($"[ProcessVideoAsync] Saving advanced analytics...");
+            if (analysisResult.HeatMaps?.Any() == true)
+            {
+                Console.WriteLine($"[ProcessVideoAsync] Persisting {analysisResult.HeatMaps.Count} heat maps");
+                foreach (var heatMap in analysisResult.HeatMaps)
+                {
+                    await context.HeatMapData.AddAsync(heatMap);
+                }
+            }
+            if (analysisResult.PlayerMetrics?.Any() == true)
+            {
+                Console.WriteLine($"[ProcessVideoAsync] Persisting {analysisResult.PlayerMetrics.Count} player metrics");
+                foreach (var metric in analysisResult.PlayerMetrics)
+                {
+                    await context.PlayerMetrics.AddAsync(metric);
+                }
+            }
+            if (analysisResult.PossessionData != null)
+            {
+                Console.WriteLine($"[ProcessVideoAsync] Persisting possession data");
+                await context.PossessionData.AddAsync(analysisResult.PossessionData);
+            }
+            
+            await context.SaveChangesAsync();
+            Console.WriteLine($"[ProcessVideoAsync] Advanced analytics saved to database");
 
             await videoAnalysisRepository.UpdateAsync(analysis);
 
@@ -427,7 +459,38 @@ public class VideoAnalysisService : IVideoAnalysisService
             AwayTeamColorSecondary = entity.AwayTeamColorSecondary,
             CameraAngle = entity.CameraAngle,
             Created = entity.Created,
-            Modified = entity.Modified
+            Modified = entity.Modified,
+            
+            // Map advanced analytics
+            PossessionData = entity.PossessionData != null ? new PossessionDataModel
+            {
+                HomeTeam = entity.PossessionData.HomeTeam,
+                AwayTeam = entity.PossessionData.AwayTeam,
+                HomePossessionSeconds = entity.PossessionData.HomePossessionSeconds,
+                AwayPossessionSeconds = entity.PossessionData.AwayPossessionSeconds,
+                HomePossessionPercentage = entity.PossessionData.HomePossessionPercentage,
+                AwayPossessionPercentage = entity.PossessionData.AwayPossessionPercentage
+            } : null,
+            
+            HeatMaps = entity.HeatMaps?.Select(h => new HeatMapDataModel
+            {
+                JerseyNumber = h.JerseyNumber?.ToString(),
+                PlayerName = h.PlayerName,
+                Team = h.Team,
+                PositionData = h.PositionData
+            }).ToList(),
+            
+            PlayerMetrics = entity.PlayerMetrics?.Select(m => new PlayerMetricsModel
+            {
+                JerseyNumber = m.JerseyNumber?.ToString(),
+                PlayerName = m.PlayerName,
+                Team = m.Team,
+                DistanceCoveredMeters = m.DistanceCoveredMeters,
+                MaxSpeedKmh = m.MaxSpeedKmh,
+                AverageSpeedKmh = m.AverageSpeedKmh,
+                SprintCount = m.SprintCount,
+                MinutesPlayed = m.MinutesPlayed
+            }).ToList()
         };
     }
 

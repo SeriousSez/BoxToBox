@@ -27,6 +27,9 @@ public class VideoAnalysisRepository : IVideoAnalysisRepository
 		return await _context.VideoAnalyses
 			.Include(v => v.PlayerStats)
 			.Include(v => v.Events)
+			.Include(v => v.HeatMaps)
+			.Include(v => v.PlayerMetrics)
+			.Include(v => v.PossessionData)
 			.FirstOrDefaultAsync(v => v.Id == id);
 	}
 

@@ -26,4 +26,9 @@ public class VideoAnalysisModel : Base
     public string? AwayTeamColorPrimary { get; set; }
     public string? AwayTeamColorSecondary { get; set; }
     public string CameraAngle { get; set; } = "Overhead";
+    
+    // Advanced Analytics
+    public PossessionDataModel? PossessionData { get; set; }
+    public List<HeatMapDataModel>? HeatMaps { get; set; }
+    public List<PlayerMetricsModel>? PlayerMetrics { get; set; }
 }

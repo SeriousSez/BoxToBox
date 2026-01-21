@@ -15,9 +15,10 @@ namespace BoxToBox.ApplicationService.Services;
 /// <summary>
 /// Video processor using YOLOv8 via ONNX Runtime for real object detection
 /// </summary>
-public class OnnxYolov8VideoProcessor : IVideoProcessor
+public class OnnxYolov8VideoProcessor : IVideoProcessor, IDisposable
 {
     private readonly string _modelPath;
+    private readonly JerseyNumberRecognizer? _jerseyRecognizer;
     private const int TARGET_FPS = 5; // Process 5 frames per second
     private const int INPUT_SIZE = 640; // YOLOv8 input size
     private static readonly bool ENABLE_FALLBACK_EVENTS = bool.TryParse(Environment.GetEnvironmentVariable("B2B_ENABLE_FALLBACK_EVENTS"), out var b) && b;
@@ -64,6 +65,25 @@ public class OnnxYolov8VideoProcessor : IVideoProcessor
         else
         {
             _modelPath = modelPath;
+        }
+
+        // Initialize jersey number recognizer
+        var jerseyModelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models", "jersey_model.onnx");
+        if (File.Exists(jerseyModelPath))
+        {
+            try
+            {
+                _jerseyRecognizer = new JerseyNumberRecognizer(jerseyModelPath);
+                Console.WriteLine("[YOLO] Jersey number recognition enabled");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[YOLO] Failed to load jersey recognizer: {ex.Message}");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[YOLO] Jersey model not found at {jerseyModelPath}, jersey number detection disabled");
         }
     }
 
@@ -449,6 +469,25 @@ public class OnnxYolov8VideoProcessor : IVideoProcessor
 
     private async Task<int?> ExtractJerseyNumberAsync(string framePath, DetectedObject playerBox)
     {
+        // Use custom trained model if available
+        if (_jerseyRecognizer != null)
+        {
+            try
+            {
+                var jerseyNumber = await _jerseyRecognizer.DetectJerseyNumberAsync(
+                    framePath,
+                    (playerBox.X, playerBox.Y, playerBox.Width, playerBox.Height),
+                    confidenceThreshold: 0.6f
+                );
+                return jerseyNumber;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[JerseyRecognizer] Detection failed: {ex.Message}");
+            }
+        }
+
+        // Fallback to Tesseract OCR if custom model not available
         try
         {
             using var image = await Image.LoadAsync<Rgb24>(framePath);
@@ -619,6 +658,12 @@ public class OnnxYolov8VideoProcessor : IVideoProcessor
                          $"Goals: {events.Count(e => e.EventType == EventType.GoalScored)}, " +
                          $"Tackles: {events.Count(e => e.EventType == EventType.Tackle)}");
         Console.WriteLine($"[ANALYSIS] Final player count: {playerStats.Count} (will be saved to database)");
+
+        // Generate advanced analytics from detections
+        var advancedAnalytics = GenerateAdvancedAnalytics(analysisId, detections, playerStats, homeTeamRoster, awayTeamRoster);
+        result.HeatMaps = advancedAnalytics.HeatMaps;
+        result.PlayerMetrics = advancedAnalytics.PlayerMetrics;
+        result.PossessionData = advancedAnalytics.PossessionData;
 
         // Calculate match totals from event-driven player stats
         result.TotalDistanceCovered = playerStats.Sum(ps => ps.DistanceCovered ?? 0f);
@@ -1321,6 +1366,110 @@ public class OnnxYolov8VideoProcessor : IVideoProcessor
         }
 
         return 30f;
+    }
+    
+    private (List<HeatMapDataEntity> HeatMaps, List<PlayerMetricsEntity> PlayerMetrics, PossessionDataEntity? PossessionData) GenerateAdvancedAnalytics(
+        Guid analysisId,
+        List<FrameDetection> detections,
+        List<PlayerStatEntity> playerStats,
+        TeamRosterRequest? homeTeamRoster,
+        TeamRosterRequest? awayTeamRoster)
+    {
+        var analyticsService = new AdvancedAnalyticsService();
+        var playerPositions = new List<AdvancedAnalyticsService.PlayerPosition>();
+        var ballPositions = new List<(double X, double Y, int Timestamp)>();
+        
+        // Extract player positions from detections (using player stats for team/jersey info)
+        foreach (var detection in detections)
+        {
+            var personDetections = detection.DetectedObjects.Where(o => o.Label == "person").ToList();
+            var ballDetection = detection.DetectedObjects.FirstOrDefault(o => o.Label == "sports ball");
+            
+            // Track ball position
+            if (ballDetection != null)
+            {
+                ballPositions.Add((
+                    X: ballDetection.X + ballDetection.Width / 2,
+                    Y: ballDetection.Y + ballDetection.Height / 2,
+                    Timestamp: detection.Timestamp
+                ));
+            }
+            
+            // Track player positions (match with player stats by position proximity)
+            foreach (var person in personDetections)
+            {
+                // For now, we'll create position entries for detected persons
+                // In a more advanced implementation, we'd match these to specific players
+                var centerX = person.X + person.Width / 2;
+                var centerY = person.Y + person.Height / 2;
+
+                // Normalize to 0-1 field coordinates based on YOLO input size
+                var normalizedX = Math.Clamp(centerX / INPUT_SIZE, 0f, 1f);
+                var normalizedY = Math.Clamp(centerY / INPUT_SIZE, 0f, 1f);
+                
+                // Try to match with a player from stats based on position
+                // This is a simplified approach - in reality you'd use tracking/jersey recognition
+                var matchedPlayer = playerStats.FirstOrDefault();
+
+                // Fall back when we can't identify jersey or name to still generate analytics
+                var jerseyNumber = matchedPlayer?.JerseyNumber ?? 0;
+                var playerName = matchedPlayer?.PlayerName ?? "Player";
+                var teamName = matchedPlayer?.Team ?? "Team";
+
+                playerPositions.Add(new AdvancedAnalyticsService.PlayerPosition
+                {
+                    JerseyNumber = jerseyNumber,
+                    PlayerName = playerName,
+                    Team = teamName,
+                    X = normalizedX,
+                    Y = normalizedY,
+                    Timestamp = detection.Timestamp
+                });
+            }
+        }
+        
+        Console.WriteLine($"[ANALYTICS] Tracked {playerPositions.Count} player positions and {ballPositions.Count} ball positions");
+        
+        // Generate heat maps
+        var heatMaps = analyticsService.GenerateHeatMaps(playerPositions, analysisId);
+        Console.WriteLine($"[ANALYTICS] Generated {heatMaps.Count} heat maps");
+        
+        // Calculate player metrics
+        var playerMetrics = analyticsService.CalculatePlayerMetrics(playerPositions, analysisId);
+        Console.WriteLine($"[ANALYTICS] Calculated metrics for {playerMetrics.Count} players");
+        
+        // Calculate possession
+        var homeTeamName = homeTeamRoster?.TeamName ?? "Home Team";
+        var awayTeamName = awayTeamRoster?.TeamName ?? "Away Team";
+        var possessionData = analyticsService.CalculatePossession(playerPositions, ballPositions, analysisId, homeTeamName, awayTeamName);
+        if (possessionData != null)
+        {
+            Console.WriteLine($"[ANALYTICS] Possession - {homeTeamName}: {possessionData.HomePossessionPercentage:F1}%, {awayTeamName}: {possessionData.AwayPossessionPercentage:F1}%");
+        }
+
+        // Detect passes and build pass network
+        var homeTeamPositions = playerPositions.Where(p => p.Team == homeTeamName).ToList();
+        var awayTeamPositions = playerPositions.Where(p => p.Team == awayTeamName).ToList();
+        
+        var homePasses = analyticsService.DetectPasses(homeTeamPositions, ballPositions, analysisId, homeTeamName, awayTeamName);
+        var awayPasses = analyticsService.DetectPasses(awayTeamPositions, ballPositions, analysisId, homeTeamName, awayTeamName);
+        Console.WriteLine($"[ANALYTICS] Detected {homePasses.Count} home team passes and {awayPasses.Count} away team passes");
+        
+        // Detect formations
+        var homeFormation = analyticsService.DetectFormation(playerPositions, analysisId, homeTeamName);
+        var awayFormation = analyticsService.DetectFormation(playerPositions, analysisId, awayTeamName);
+        
+        if (homeFormation != null)
+            Console.WriteLine($"[ANALYTICS] {homeTeamName} formation: {homeFormation.Formation}");
+        if (awayFormation != null)
+            Console.WriteLine($"[ANALYTICS] {awayTeamName} formation: {awayFormation.Formation}");
+        
+        return (heatMaps, playerMetrics, possessionData);
+    }
+
+    public void Dispose()
+    {
+        _jerseyRecognizer?.Dispose();
     }
 }
 

@@ -361,3 +361,17 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Python virtual environments
+venv/
+env/
+.venv/
+
+# Large model files
+*.pth
+*.onnx
+*.pt
+
+# Training data
+training/data/
+training/models/
